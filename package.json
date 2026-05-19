@@ -1,0 +1,94 @@
+{
+  "name": "skill-indexer",
+  "version": "0.0.0",
+  "description": "Zero-config CLI that scans your npm dependencies for SKILL.md directories, validates them, and installs them into Cursor / Codex / Claude / Copilot / Amp / OpenCode / Goose skill folders.",
+  "keywords": [
+    "skills",
+    "agent-skills",
+    "skill-md",
+    "cursor",
+    "codex",
+    "claude",
+    "claude-code",
+    "copilot",
+    "opencode",
+    "goose",
+    "amp",
+    "ai",
+    "agents",
+    "cli"
+  ],
+  "homepage": "https://github.com/hymhub/skill-indexer#readme",
+  "bugs": {
+    "url": "https://github.com/hymhub/skill-indexer/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hymhub/skill-indexer.git"
+  },
+  "license": "MIT",
+  "author": "skill-indexer contributors",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "skill-indexer": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "npm run build",
+    "changeset": "changeset",
+    "release": "changeset publish"
+  },
+  "dependencies": {
+    "cac": "^6.7.14",
+    "gray-matter": "^4.0.3",
+    "kleur": "^4.1.5",
+    "picomatch": "^4.0.2"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.9",
+    "@types/node": "^20.14.10",
+    "@types/picomatch": "^3.0.1",
+    "@typescript-eslint/eslint-plugin": "^7.16.0",
+    "@typescript-eslint/parser": "^7.16.0",
+    "@vitest/coverage-v8": "^2.0.4",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.3",
+    "tsup": "^8.1.0",
+    "typescript": "^5.5.3",
+    "vitest": "^2.0.4"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}
