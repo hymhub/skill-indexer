@@ -1,6 +1,6 @@
 {
   "name": "skill-indexer",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Zero-config CLI that scans your npm dependencies for SKILL.md directories, validates them, and installs them into Cursor / Codex / Claude / Copilot / Amp / OpenCode / Goose skill folders.",
   "keywords": [
     "skills",
