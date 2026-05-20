@@ -10,9 +10,17 @@ export function manifestPath(cwd: string): string {
 }
 
 export async function readManifest(cwd: string): Promise<Manifest | undefined> {
-  const data = await readJsonSafe<Manifest>(manifestPath(cwd));
-  if (!data || data.version !== 1) return undefined;
-  return data;
+  const data = await readJsonSafe<Manifest | LegacyManifest>(manifestPath(cwd));
+  if (!data) return undefined;
+  if (data.version === 2) return data;
+  if (data.version === 1) {
+    return {
+      version: 2,
+      updatedAt: data.updatedAt,
+      entries: data.entries,
+    };
+  }
+  return undefined;
 }
 
 export async function writeManifest(cwd: string, manifest: Manifest): Promise<void> {
@@ -22,13 +30,19 @@ export async function writeManifest(cwd: string, manifest: Manifest): Promise<vo
 }
 
 export function emptyManifest(): Manifest {
-  return { version: 1, updatedAt: new Date().toISOString(), entries: [] };
+  return { version: 2, updatedAt: new Date().toISOString(), entries: [] };
 }
 
 export function buildManifest(entries: ManifestEntry[]): Manifest {
   return {
-    version: 1,
+    version: 2,
     updatedAt: new Date().toISOString(),
     entries,
   };
+}
+
+interface LegacyManifest {
+  version: 1;
+  updatedAt: string;
+  entries: ManifestEntry[];
 }

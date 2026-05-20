@@ -115,9 +115,7 @@ export async function validateSkill(
   }
 
   const errorCount = issues.filter((i) => i.level === 'error').length;
-  const effectiveErrors = options.strict
-    ? issues.length
-    : errorCount;
+  const effectiveErrors = options.strict ? issues.length : errorCount;
 
   if (effectiveErrors > 0) {
     return { valid: false, issues };
@@ -127,10 +125,12 @@ export async function validateSkill(
   const skill: ValidatedSkill = {
     ...candidate,
     name,
+    originalName: name,
     description,
     frontmatter,
     warnings,
     lines,
+    channel: candidate.channel ?? 'stable',
   };
   return { valid: true, issues, skill };
 }

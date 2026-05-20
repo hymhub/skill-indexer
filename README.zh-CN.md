@@ -9,21 +9,24 @@
 
 > 零配置 CLI：扫描你 npm 依赖里的 `SKILL.md` 目录，**按 SKILL.md 规范严格校验**，再一键安装到 Cursor / Codex / Claude / Copilot / Amp / OpenCode / Goose 各自的 skills 目录。
 
-库作者把 Agent Skill 放进自己的 npm 包发布出去；消费者只需 **一条命令**，就能把 `node_modules` 里所有合规的 skill 同步到 AI 助手识别的目录中。严格的 frontmatter 校验意味着：那些"碰巧也叫 `skills/`、但并不是真正 skill"的目录绝不会污染你的项目。
+库作者把 Agent Skill 放进自己的 npm 包发布出去；消费者只需 **一条命令**，就能把 `node_modules` 里所有合规的 skill 同步到 AI 助手识别的项目本地目录中。严格的 frontmatter 校验意味着：那些"碰巧也叫 `skills/`、但并不是真正 skill"的目录绝不会污染你的项目。
+
+这个项目的设计目标是跨工具，而不是服务某一个 IDE 生态：npm 继续负责版本锁定、lockfile、provenance 和 audit；`agents.skills` 作为 npm 包内的声明协议，告诉各个工具哪些目录才是真正的 skill。SKILL.md 格式本身可以参考 [`agentskills.io`](https://agentskills.io) 的介绍；`skill-indexer` 只负责把 npm 包发布的 skill 同步到各工具的项目本地目录。
 
 ---
 
 ## 为什么再造一个轮子？
 
-| 能力 | `skill-indexer` | [`npm-agentskills`](https://github.com/onmax/npm-agentskills) | `add-skill` / 其它 |
-|---|---|---|---|
-| 约定式扫描（依赖方无需改 `package.json`） | 支持 | 不支持 | 部分 |
-| 声明式 `agents.skills` 字段 | 支持（兼容） | 支持 | 部分 |
-| 严格的 `SKILL.md` frontmatter 校验 | 支持 | 部分 | 不支持 |
-| `include` / `exclude` glob 双过滤 | 支持 | 不支持 | 不支持 |
-| 同名冲突策略（`error` / `first-wins` / `last-wins`） | 支持 | 无 | 无 |
-| 基于 manifest 的安全 `clean` | 支持 | 不支持 | 不支持 |
-| 一条命令同步到多个工具 | 支持 | 支持 | 部分 |
+| 能力                                                               | `skill-indexer` | [`npm-agentskills`](https://github.com/onmax/npm-agentskills) | `add-skill` / 其它 |
+| ------------------------------------------------------------------ | --------------- | ------------------------------------------------------------- | ------------------ |
+| 声明式 `agents.skills` 字段                                        | 支持（推荐）    | 支持                                                          | 部分               |
+| 约定式 fallback（依赖方无需改 `package.json`）                     | 支持            | 不支持                                                        | 部分               |
+| 严格的 `SKILL.md` frontmatter 校验                                 | 支持            | 部分                                                          | 不支持             |
+| experimental skill 通道                                            | 支持            | 不支持                                                        | 不支持             |
+| `include` / `exclude` glob 双过滤                                  | 支持            | 不支持                                                        | 不支持             |
+| 同名冲突策略（`error` / `first-wins` / `last-wins` / `keep-both`） | 支持            | 无                                                            | 无                 |
+| 基于 manifest 的安全 `clean` + 来源审计                            | 支持            | 不支持                                                        | 不支持             |
+| 一条命令同步到多个工具                                             | 支持            | 支持                                                          | 部分               |
 
 如果你曾遇到过某个依赖里恰好有 `skills/` 目录或一个并非给 agent 用的 `SKILL.md`，`skill-indexer` 会静默跳过，不让它污染你的 `.cursor/skills/`。
 
@@ -60,43 +63,47 @@ npx skill-indexer install -t cursor,codex,claude
 
 ### 作为库作者
 
-在你的 npm 包里放一个 `SKILL.md`。最简单的"约定式"布局**不需要**改 `package.json`：
+在你的 npm 包里发布一个或多个 `SKILL.md` 目录。推荐做法是声明式：在 `package.json#agents.skills` 里列出每个 skill，让消费者不必猜哪些目录是给 agent 用的。
 
 ```
 my-awesome-lib/
 ├── package.json
 ├── src/
 └── skills/
-    └── my-awesome-lib/
-        ├── SKILL.md
-        └── reference.md
+    └── my-skill/
+        ├── SKILL.md          # Required: metadata + instructions
+        ├── scripts/          # Optional: executable code
+        ├── references/       # Optional: documentation
+        ├── assets/           # Optional: templates, resources
+        └── ...               # Any additional files or directories
 ```
 
 ```markdown
 ---
-name: my-awesome-lib
+name: my-skill
 description: 用 my-awesome-lib API 做某件事。当用户提到 X、或者询问怎么 Y 时触发使用。
 ---
 
-# my-awesome-lib
+# my-skill
 
 第 1 步：……
 ```
 
-更喜欢声明式（兼容 `npm-agentskills`）？加一个 `agents` 字段即可：
+添加 `agents` 字段：
 
 ```json
 {
   "name": "my-awesome-lib",
   "agents": {
     "skills": [
-      { "name": "my-awesome-lib", "path": "./skills/my-awesome-lib" }
+      { "name": "my-skill", "path": "./skills/my-skill" },
+      { "name": "my-skill-deep-dive", "path": "./skills/my-skill-deep-dive" }
     ]
   }
 }
 ```
 
-两种形式都会被自动识别。
+如果包声明了 `agents.skills`，这些条目就是权威清单；如果没有声明，`skill-indexer` 才会 fallback 到 `skills/<name>/SKILL.md` 约定布局。
 
 ---
 
@@ -104,44 +111,46 @@ description: 用 my-awesome-lib API 做某件事。当用户提到 X、或者询
 
 所有路径都是**项目本地**——`skill-indexer` 绝不会写入全局配置。
 
-| Flag | 工具 | 目录 |
-|------|------|-----------|
-| `cursor` | [Cursor](https://cursor.com/docs/skills) | `.cursor/skills/` |
-| `codex` | [OpenAI Codex](https://developers.openai.com/codex/skills) | `.codex/skills/` |
-| `claude` | [Claude Code](https://code.claude.com/docs/en/skills) | `.claude/skills/` |
-| `copilot` | [GitHub Copilot](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills) | `.github/skills/` |
-| `amp` | [Amp](https://ampcode.com/news/agent-skills) | `.agents/skills/` |
-| `opencode` | [OpenCode](https://opencode.ai/docs/skills) | `.opencode/skill/` |
-| `goose` | [Goose](https://block.github.io/goose/docs/guides/context-engineering/using-skills) | `.goose/skills/` |
-| `all` | 上述全部 | — |
+| Flag       | 工具                                                                                    | 目录               |
+| ---------- | --------------------------------------------------------------------------------------- | ------------------ |
+| `cursor`   | [Cursor](https://cursor.com/docs/skills)                                                | `.cursor/skills/`  |
+| `codex`    | [OpenAI Codex](https://developers.openai.com/codex/skills)                              | `.codex/skills/`   |
+| `claude`   | [Claude Code](https://code.claude.com/docs/en/skills)                                   | `.claude/skills/`  |
+| `copilot`  | [GitHub Copilot](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills) | `.github/skills/`  |
+| `amp`      | [Amp](https://ampcode.com/news/agent-skills)                                            | `.agents/skills/`  |
+| `opencode` | [OpenCode](https://opencode.ai/docs/skills)                                             | `.opencode/skill/` |
+| `goose`    | [Goose](https://block.github.io/goose/docs/guides/context-engineering/using-skills)     | `.goose/skills/`   |
+| `all`      | 上述全部                                                                                | —                  |
 
 ---
 
 ## CLI 参考
 
 ```bash
-skill-indexer install [options]
-skill-indexer list    [options]
-skill-indexer validate [path] [options]
-skill-indexer clean   [options]
+skill-indexer install [options]          # 安装依赖中的合法 skills
+skill-indexer list    [options]          # 查看发现、跳过、过滤的 skills
+skill-indexer validate [path] [options]  # 校验一个 skill 目录，或本地 ./skills
+skill-indexer clean   [options]          # 删除 manifest 记录的 skills
 ```
 
 ### 通用参数
 
-| 参数 | 说明 |
-|------|-------------|
-| `-t, --target <list>` | 逗号分隔的目标工具，例如 `cursor,codex,claude`，或写 `all`。 |
-| `--cwd <dir>` | 项目根目录（默认 `process.cwd()`）。 |
-| `--config <path>` | 显式指定配置文件路径。 |
-| `--include <patterns>` | 逗号分隔的 glob（按 npm 包名匹配）。 |
-| `--exclude <patterns>` | 逗号分隔的 glob（按 npm 包名匹配）。 |
-| `--overwrite <mode>` | `skip`（默认）/ `overwrite` / `merge`。 |
-| `--on-conflict <mode>` | `error` / `first-wins`（默认）/ `last-wins`。 |
-| `--strict` | 把所有校验警告升级为错误。 |
-| `--dry-run` | 只打印将执行的操作，不写盘。 |
-| `--no-convention` | 关闭约定式扫描。 |
-| `--no-declarative` | 关闭声明式扫描。 |
-| `--json` | 输出机器可读的 JSON（进度信息走 stderr）。 |
+| 参数                   | 默认值           | 可选值                                                                    | 作用                                                        |
+| ---------------------- | ---------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `-t, --target <list>`  | 配置值 / 无      | `cursor`, `codex`, `claude`, `copilot`, `amp`, `opencode`, `goose`, `all` | 选择要安装到哪些工具目录；多个目标用逗号分隔。              |
+| `--cwd <dir>`          | `process.cwd()`  | 文件系统路径                                                              | 设置项目根目录。                                            |
+| `--config <path>`      | 自动查找         | JSON 配置文件路径                                                         | 读取指定配置文件。                                          |
+| `--include <patterns>` | 无               | 逗号分隔 glob                                                             | 只允许匹配的 npm 包。                                       |
+| `--exclude <patterns>` | 无               | 逗号分隔 glob                                                             | 跳过匹配的 npm 包。                                         |
+| `--overwrite <mode>`   | `skip`           | `skip`, `overwrite`, `merge`                                              | 目标已存在时：跳过、替换、或合并复制。                      |
+| `--on-conflict <mode>` | `first-wins`     | `first-wins`, `last-wins`, `error`, `keep-both`                           | 同名冲突时：保留第一个、最后一个、报错、或改名后全部保留。  |
+| `--scan <mode>`        | `declared-first` | `declared-first`, `both`, `convention`, `declarative`                     | 从声明优先发现、两种都扫、只扫 `skills/`、或只读 `agents`。 |
+| `--strict`             | `false`          | boolean flag                                                              | 把校验 warning 当成错误。                                   |
+| `--dry-run`            | `false`          | boolean flag                                                              | 只展示操作，不写文件。                                      |
+| `--experimental`       | `false`          | boolean flag                                                              | 包含 experimental skills。                                  |
+| `--no-convention`      | `false`          | boolean flag                                                              | 关闭 `skills/<name>/SKILL.md` fallback。                    |
+| `--no-declarative`     | `false`          | boolean flag                                                              | 关闭 `package.json#agents` 发现。                           |
+| `--json`               | `false`          | boolean flag                                                              | 输出 JSON。                                                 |
 
 ### 示例
 
@@ -156,6 +165,12 @@ skill-indexer install -t cursor --strict --dry-run
 skill-indexer install -t cursor \
   --include "@my-org/*" \
   --exclude "legacy-*"
+
+# 同名冲突时保留全部 skill，并为后来的冲突生成确定性名称
+skill-indexer install -t all --on-conflict keep-both
+
+# 显式安装 experimental skills
+skill-indexer install -t codex --experimental
 
 # 用 JSON 输出列表（适合给工具消费）
 skill-indexer list --json
@@ -179,10 +194,11 @@ skill-indexer clean -t claude
     "targets": ["cursor", "codex", "claude"],
     "include": ["@my-org/*", "awesome-skills"],
     "exclude": ["legacy-pkg", "**/internal-only/*"],
-    "scan": { "convention": true, "declarative": true },
+    "scan": { "mode": "declared-first" },
     "overwrite": "skip",
     "strict": false,
-    "onConflict": "first-wins"
+    "onConflict": "first-wins",
+    "experimental": false
   }
 }
 ```
@@ -215,7 +231,10 @@ skill-indexer clean -t claude
 - **`error`**：直接以非零退出码报错，列出冲突的来源；
 - **`first-wins`**（默认）：保留先发现的，warning 列出被丢弃的；
 - **`last-wins`**：保留最后匹配到的；适合显式遮蔽上游 skill 的场景；
+- **`keep-both`**：保留所有冲突 skill，并为后来的冲突生成确定性名称；
 - 项目本地（`./skills/<name>`）的 skill **总是优先**，与策略无关。
+
+`keep-both` 下，第一个 skill 保留原始 frontmatter `name`。后续冲突会追加包名后缀，例如 `shared` 和 `shared--beta-pkg`。如果同一个包暴露多个同名 skill，会继续带上目录名，例如 `shared--multi-pkg-two`。只有安装到目标目录里的 `SKILL.md` frontmatter 会被重写，`node_modules` 里的原包不会被修改。
 
 ---
 
@@ -225,15 +244,22 @@ skill-indexer clean -t claude
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "updatedAt": "2026-05-19T07:00:00.000Z",
   "entries": [
     {
-      "name": "my-awesome-lib",
-      "source": { "packageName": "my-awesome-lib", "packageVersion": "1.2.3", "kind": "convention" },
+      "name": "my-skill",
+      "channel": "stable",
+      "contentHash": "sha256-...",
+      "source": {
+        "packageName": "my-awesome-lib",
+        "packageVersion": "1.2.3",
+        "kind": "declarative",
+        "path": "skills/my-skill"
+      },
       "targets": [
-        { "target": "cursor", "dest": "/abs/path/to/.cursor/skills/my-awesome-lib" },
-        { "target": "codex", "dest": "/abs/path/to/.codex/skills/my-awesome-lib" }
+        { "target": "cursor", "dest": "/abs/path/to/.cursor/skills/my-skill" },
+        { "target": "codex", "dest": "/abs/path/to/.codex/skills/my-skill" }
       ],
       "installedAt": "2026-05-19T07:00:00.000Z"
     }
@@ -264,22 +290,23 @@ const result = await installSkills(report.skills, { config });
 console.log(result.entries);
 ```
 
-上面用到的所有类型（`Skill`、`ValidatedSkill`、`Target`、`SkillSyncConfig`、`Manifest`……）都从包根处导出。
+上面用到的所有类型（`ValidatedSkill`、`Target`、`SkillSyncConfig`、`Manifest`……）都从包根处导出。
 
 ---
 
 ## 发现策略一览
 
 ```
-node_modules/<pkg>/skills/<name>/SKILL.md            <- 约定式扫描
-node_modules/@scope/<pkg>/skills/<name>/SKILL.md     <- 约定式（scoped 包）
-node_modules/.pnpm/<id>/node_modules/<pkg>/skills/.. <- 约定式（pnpm 扁平存储）
-node_modules/<pkg>/package.json#agents.skills        <- 声明式
-node_modules/<pkg>/package.json#agents.skillsDir     <- 声明式（整个目录）
-<cwd>/skills/<name>/SKILL.md                         <- 本地（永远优先）
+node_modules/<pkg>/package.json#agents.skills              <- 声明式
+node_modules/<pkg>/package.json#agents.experimentalSkills  <- opt-in experimental
+node_modules/<pkg>/package.json#agents.skillsDir           <- 声明式（整个目录）
+node_modules/<pkg>/skills/<name>/SKILL.md                  <- 约定式 fallback
+node_modules/@scope/<pkg>/skills/<name>/SKILL.md           <- 约定式 fallback（scoped 包）
+node_modules/.pnpm/<id>/node_modules/<pkg>/skills/..       <- 约定式 fallback（pnpm 扁平存储）
+<cwd>/skills/<name>/SKILL.md                              <- 本地（永远优先）
 ```
 
-符号链接会被解引用并按真实路径去重，pnpm 的 hardlink 与顶层 symlink 不会被扫描两遍。
+默认扫描模式是 `declared-first`：如果包声明了 `agents.skills`、`agents.experimentalSkills` 或 `agents.skillsDir`，就只按声明扫描；没有声明的包才 fallback 到 `skills/<name>/SKILL.md`。如果你确实想同时启用两种来源，可以传 `--scan both`。
 
 ---
 

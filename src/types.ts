@@ -4,17 +4,12 @@
  * All path values are absolute unless explicitly documented otherwise.
  */
 
-export type Target =
-  | 'cursor'
-  | 'codex'
-  | 'claude'
-  | 'copilot'
-  | 'amp'
-  | 'opencode'
-  | 'goose';
+export type Target = 'cursor' | 'codex' | 'claude' | 'copilot' | 'amp' | 'opencode' | 'goose';
 
 /** Where a skill candidate came from. */
 export type SkillSourceKind = 'convention' | 'declarative' | 'local';
+export type SkillChannel = 'stable' | 'experimental';
+export type ScanMode = 'declared-first' | 'both' | 'convention' | 'declarative';
 
 export interface SkillSource {
   kind: SkillSourceKind;
@@ -41,16 +36,25 @@ export interface SkillCandidate {
   skillMdPath: string;
   /** The directory's basename. */
   dirName: string;
+  /** Stable skills install by default; experimental skills require opt-in. */
+  channel?: SkillChannel;
+  /** Relative path from the npm package root, when known. */
+  declaredPath?: string;
+  /** Optional target hint from package.json#agents.skills. */
+  declaredTargets?: string[];
 }
 
 /** A skill candidate that has passed validation. */
 export interface ValidatedSkill extends SkillCandidate {
   name: string;
+  /** The frontmatter name before conflict resolution renamed the install name. */
+  originalName: string;
   description: string;
   frontmatter: SkillFrontmatter;
   warnings: string[];
   /** Total line count of SKILL.md (used for advisory warnings). */
   lines: number;
+  channel: SkillChannel;
 }
 
 export interface ValidationIssue {
@@ -66,9 +70,10 @@ export interface ValidationResult {
 }
 
 export type OverwriteMode = 'skip' | 'overwrite' | 'merge';
-export type ConflictMode = 'error' | 'first-wins' | 'last-wins';
+export type ConflictMode = 'error' | 'first-wins' | 'last-wins' | 'keep-both';
 
 export interface ScanOptions {
+  mode?: ScanMode;
   convention: boolean;
   declarative: boolean;
 }
@@ -83,6 +88,7 @@ export interface SkillSyncConfig {
   onConflict: ConflictMode;
   cwd: string;
   dryRun: boolean;
+  experimental: boolean;
 }
 
 /** User-facing config shape (every field optional; `targets` may be 'all'). */
@@ -96,12 +102,15 @@ export interface UserConfig {
   onConflict?: ConflictMode;
   cwd?: string;
   dryRun?: boolean;
+  experimental?: boolean;
 }
 
 export interface ManifestSourceInfo {
   packageName: string;
   packageVersion?: string;
   kind: SkillSourceKind;
+  /** Relative path from package root to the source skill directory. */
+  path?: string;
 }
 
 export interface ManifestTargetInfo {
@@ -112,13 +121,16 @@ export interface ManifestTargetInfo {
 
 export interface ManifestEntry {
   name: string;
+  originalName?: string;
+  channel?: SkillChannel;
+  contentHash?: string;
   source: ManifestSourceInfo;
   targets: ManifestTargetInfo[];
   installedAt: string;
 }
 
 export interface Manifest {
-  version: 1;
+  version: 2;
   updatedAt: string;
   entries: ManifestEntry[];
 }
@@ -127,11 +139,15 @@ export interface Manifest {
 export interface DeclarativeSkillSpec {
   name?: string;
   path: string;
+  channel?: SkillChannel;
+  targets?: string[];
 }
 
 export interface PackageAgentsField {
   skills?: DeclarativeSkillSpec[];
+  experimentalSkills?: DeclarativeSkillSpec[];
   skillsDir?: string;
+  experimentalSkillsDir?: string;
 }
 
 export interface PackageJsonLike {

@@ -6,29 +6,42 @@ import { validateCommand } from './commands/validate.js';
 import { cleanCommand } from './commands/clean.js';
 
 declare const __SKILL_INDEXER_VERSION__: string;
-const VERSION =
-  typeof __SKILL_INDEXER_VERSION__ === 'string' ? __SKILL_INDEXER_VERSION__ : '0.0.0';
+const VERSION = typeof __SKILL_INDEXER_VERSION__ === 'string' ? __SKILL_INDEXER_VERSION__ : '0.0.0';
 
 const cli = cac('skill-indexer');
 
 const sharedOptions = (cmd: ReturnType<typeof cli.command>) =>
   cmd
-    .option('-t, --target <targets>', 'Comma-separated targets: cursor,codex,claude,copilot,amp,opencode,goose,all')
+    .option(
+      '-t, --target <targets>',
+      'Comma-separated targets: cursor,codex,claude,copilot,amp,opencode,goose,all',
+    )
     .option('--cwd <dir>', 'Project root (defaults to current working directory)')
     .option('--config <path>', 'Path to a skill-indexer config file (JSON)')
-    .option('--include <patterns>', 'Comma-separated glob patterns to include (matched against package name)')
-    .option('--exclude <patterns>', 'Comma-separated glob patterns to exclude (matched against package name)')
+    .option(
+      '--include <patterns>',
+      'Comma-separated glob patterns to include (matched against package name)',
+    )
+    .option(
+      '--exclude <patterns>',
+      'Comma-separated glob patterns to exclude (matched against package name)',
+    )
     .option('--overwrite <mode>', 'How to handle existing files: skip | overwrite | merge')
-    .option('--on-conflict <mode>', 'Conflict policy: error | first-wins | last-wins')
+    .option('--on-conflict <mode>', 'Conflict policy: error | first-wins | last-wins | keep-both')
+    .option('--scan <mode>', 'Scan strategy: declared-first | both | convention | declarative')
     .option('--strict', 'Promote validation warnings to errors')
     .option('--dry-run', 'Plan the operation without writing files')
+    .option('--experimental', 'Include experimental skills declared by packages')
     .option('--no-convention', 'Disable convention scan (skills/<name>/SKILL.md)')
     .option('--no-declarative', 'Disable declarative scan (package.json#agents.skills)')
     .option('--json', 'Emit machine-readable JSON output');
 
 sharedOptions(
   cli
-    .command('install', 'Validate and install agent skills from dependencies into target directories')
+    .command(
+      'install',
+      'Validate and install agent skills from dependencies into target directories',
+    )
     .example('  skill-indexer install -t cursor,codex,claude')
     .example('  skill-indexer install -t all --dry-run')
     .action(installCommand),
@@ -43,7 +56,7 @@ sharedOptions(
 
 sharedOptions(
   cli
-    .command('validate [path]', 'Validate a single SKILL.md directory or the project\'s own skills/')
+    .command('validate [path]', "Validate a single SKILL.md directory or the project's own skills/")
     .example('  skill-indexer validate ./skills/my-skill')
     .example('  skill-indexer validate --strict')
     .action(validateCommand),

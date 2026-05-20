@@ -1,6 +1,6 @@
 ---
 name: example-skill-library
-description: Demonstrates how to ship an Agent Skill from an npm package via the skill-indexer convention. Use when learning how to author a skill or as a template for new skills.
+description: Demonstrates how to ship an Agent Skill from an npm package via skill-indexer. Use when learning how to author a skill or as a template for new skills.
 ---
 
 # example-skill-library
@@ -18,4 +18,4 @@ hello('world');
 
 ## Resources
 
-- See [`reference.md`](./reference.md) for the full API reference.
+- See [`references/api.md`](./references/api.md) for the full API reference.

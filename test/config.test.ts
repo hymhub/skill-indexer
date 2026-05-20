@@ -98,9 +98,14 @@ describe('loadConfig', () => {
   it('uses safe defaults when no config is found', async () => {
     const { config } = await loadConfig({ cwd: project.root });
     expect(config.targets).toEqual([]);
-    expect(config.scan).toEqual({ convention: true, declarative: true });
+    expect(config.scan).toEqual({
+      mode: 'declared-first',
+      convention: true,
+      declarative: true,
+    });
     expect(config.overwrite).toBe('skip');
     expect(config.strict).toBe(false);
     expect(config.onConflict).toBe('first-wins');
+    expect(config.experimental).toBe(false);
   });
 });

@@ -4,6 +4,7 @@ import type {
   OverwriteMode,
   PackageJsonLike,
   ScanOptions,
+  ScanMode,
   SkillSyncConfig,
   Target,
   UserConfig,
@@ -28,7 +29,8 @@ export interface LoadedConfig {
 const CONFIG_FILENAMES = ['skill-indexer.config.json', '.skill-indexerrc.json', '.skill-indexerrc'];
 
 const VALID_OVERWRITE: OverwriteMode[] = ['skip', 'overwrite', 'merge'];
-const VALID_CONFLICT: ConflictMode[] = ['error', 'first-wins', 'last-wins'];
+const VALID_CONFLICT: ConflictMode[] = ['error', 'first-wins', 'last-wins', 'keep-both'];
+const VALID_SCAN_MODE: ScanMode[] = ['declared-first', 'both', 'convention', 'declarative'];
 
 export async function loadConfig(options: LoadConfigOptions = {}): Promise<LoadedConfig> {
   const cwd = path.resolve(options.cwd ?? process.cwd());
@@ -82,11 +84,23 @@ export function mergeUserConfig(base: UserConfig, extra: UserConfig): UserConfig
 
 function finalize(user: UserConfig, cwd: string): SkillSyncConfig {
   const targets: Target[] = normalizeTargets(user.targets);
+  const scanMode = ensureEnum(
+    user.scan?.mode,
+    VALID_SCAN_MODE,
+    deriveScanMode(user.scan),
+    'scan.mode',
+  );
   const scan: ScanOptions = {
-    convention: user.scan?.convention ?? DEFAULT_CONFIG.scan.convention,
-    declarative: user.scan?.declarative ?? DEFAULT_CONFIG.scan.declarative,
+    mode: scanMode,
+    convention: user.scan?.convention ?? scanMode !== 'declarative',
+    declarative: user.scan?.declarative ?? scanMode !== 'convention',
   };
-  const overwrite = ensureEnum(user.overwrite, VALID_OVERWRITE, DEFAULT_CONFIG.overwrite, 'overwrite');
+  const overwrite = ensureEnum(
+    user.overwrite,
+    VALID_OVERWRITE,
+    DEFAULT_CONFIG.overwrite,
+    'overwrite',
+  );
   const onConflict = ensureEnum(
     user.onConflict,
     VALID_CONFLICT,
@@ -103,7 +117,15 @@ function finalize(user: UserConfig, cwd: string): SkillSyncConfig {
     strict: Boolean(user.strict ?? DEFAULT_CONFIG.strict),
     onConflict,
     dryRun: Boolean(user.dryRun ?? DEFAULT_CONFIG.dryRun),
+    experimental: Boolean(user.experimental ?? DEFAULT_CONFIG.experimental),
   };
+}
+
+function deriveScanMode(scan: Partial<ScanOptions> | undefined): ScanMode {
+  if (!scan) return DEFAULT_CONFIG.scan.mode ?? 'declared-first';
+  if (scan.convention === false && scan.declarative !== false) return 'declarative';
+  if (scan.declarative === false && scan.convention !== false) return 'convention';
+  return DEFAULT_CONFIG.scan.mode ?? 'declared-first';
 }
 
 function ensureEnum<T extends string>(
