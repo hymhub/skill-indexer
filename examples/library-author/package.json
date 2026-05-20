@@ -1,8 +1,16 @@
 {
   "name": "example-skill-library",
   "version": "1.0.0",
-  "description": "Example npm package that ships an agent skill via the skill-indexer convention.",
+  "description": "Example npm package that ships an agent skill via skill-indexer.",
   "private": true,
+  "agents": {
+    "skills": [
+      {
+        "name": "example-skill-library",
+        "path": "./skills/example-skill-library"
+      }
+    ]
+  },
   "files": [
     "dist",
     "skills"

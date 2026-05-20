@@ -37,7 +37,9 @@ const candidates = await scanAll({ cwd: config.cwd, scan: config.scan });
 const report = await resolveSkills(candidates, config);
 
 if (report.invalid.length) {
-  console.warn(`Skipped ${report.invalid.length} candidate(s) – run \`skill-indexer list\` for details.`);
+  console.warn(
+    `Skipped ${report.invalid.length} candidate(s) – run \`skill-indexer list\` for details.`,
+  );
 }
 
 const result = await installSkills(report.skills, { config });
@@ -54,7 +56,7 @@ Merges defaults + `package.json#skillIndexer` + `skill-indexer.config.json` + ex
 
 ### `scanAll({ cwd, scan }): Promise<SkillCandidate[]>`
 
-Discovers every skill candidate (convention + declarative + local) reachable from `cwd`. Symlinks are dereferenced and pnpm flat stores are walked.
+Discovers every skill candidate reachable from `cwd`. The default scan mode is `declared-first`: packages with `agents.skills`, `agents.experimentalSkills`, or `agents.skillsDir` use those declarations; packages without declarations fall back to `skills/<name>/SKILL.md`. Symlinks are dereferenced and pnpm flat stores are walked.
 
 ### `validateSkill(candidate, { strict? }): Promise<ValidationResult>`
 
@@ -62,7 +64,7 @@ Reads and validates `<candidate>/SKILL.md`. Always returns a structured result; 
 
 ### `resolveSkills(candidates, config): Promise<ResolveReport>`
 
-Applies `include` / `exclude`, validates each candidate, then resolves same-name conflicts. Throws `SkillSyncConflictError` only when `config.onConflict === 'error'`.
+Applies `include` / `exclude`, filters experimental skills unless `config.experimental` is true, validates each candidate, then resolves same-name conflicts. Throws `SkillSyncConflictError` only when `config.onConflict === 'error'`.
 
 ### `installSkills(skills, { config }): Promise<InstallReport>`
 
@@ -84,28 +86,45 @@ interface SkillSyncConfig {
   targets: Target[];
   include: string[];
   exclude: string[];
-  scan: { convention: boolean; declarative: boolean };
+  scan: {
+    mode?: 'declared-first' | 'both' | 'convention' | 'declarative';
+    convention: boolean;
+    declarative: boolean;
+  };
   overwrite: 'skip' | 'overwrite' | 'merge';
   strict: boolean;
-  onConflict: 'error' | 'first-wins' | 'last-wins';
+  onConflict: 'error' | 'first-wins' | 'last-wins' | 'keep-both';
   dryRun: boolean;
+  experimental: boolean;
 }
 
 interface ValidatedSkill {
   name: string;
+  originalName: string;
   description: string;
   frontmatter: Record<string, unknown>;
+  channel: 'stable' | 'experimental';
   dir: string;
   skillMdPath: string;
   dirName: string;
-  source: { kind: 'convention' | 'declarative' | 'local'; packageName: string; packageVersion?: string; packageRoot: string };
+  source: {
+    kind: 'convention' | 'declarative' | 'local';
+    packageName: string;
+    packageVersion?: string;
+    packageRoot: string;
+  };
   warnings: string[];
   lines: number;
 }
 
 interface InstallReport {
   dryRun: boolean;
-  entries: Array<{ skill: ValidatedSkill; target: Target; dest: string; action: 'created' | 'overwritten' | 'merged' | 'skipped' }>;
+  entries: Array<{
+    skill: ValidatedSkill;
+    target: Target;
+    dest: string;
+    action: 'created' | 'overwritten' | 'merged' | 'skipped';
+  }>;
   manifest: Manifest;
 }
 ```

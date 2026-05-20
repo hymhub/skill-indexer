@@ -1,5 +1,7 @@
 import { promises as fs } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
+import matter from 'gray-matter';
 import type {
   Manifest,
   ManifestEntry,
@@ -49,6 +51,7 @@ export async function installSkills(
 
   for (const skill of skills) {
     const targetEntries: ManifestEntry['targets'] = [];
+    const contentHash = await hashDirectory(skill.dir);
     for (const target of config.targets) {
       const destRoot = path.resolve(config.cwd, TARGET_DIRS[target]);
       const dest = path.join(destRoot, skill.name);
@@ -61,10 +64,14 @@ export async function installSkills(
     if (targetEntries.length > 0) {
       manifestEntries.push({
         name: skill.name,
+        originalName: skill.originalName !== skill.name ? skill.originalName : undefined,
+        channel: skill.channel,
+        contentHash,
         source: {
           packageName: skill.source.packageName,
           packageVersion: skill.source.packageVersion,
           kind: skill.source.kind,
+          path: skill.declaredPath ?? relativeSourcePath(skill),
         },
         targets: targetEntries,
         installedAt: new Date().toISOString(),
@@ -91,22 +98,75 @@ async function applyInstall(
     if (overwrite === 'overwrite') {
       if (!dryRun) {
         await removeDir(dest);
-        await copyDir(skill.dir, dest);
+        await copySkillDir(skill, dest);
       }
       return 'overwritten';
     }
     if (overwrite === 'merge') {
       if (!dryRun) {
-        await copyDir(skill.dir, dest);
+        await copySkillDir(skill, dest);
       }
       return 'merged';
     }
   }
   if (!dryRun) {
     await ensureDir(path.dirname(dest));
-    await copyDir(skill.dir, dest);
+    await copySkillDir(skill, dest);
   }
   return 'created';
+}
+
+async function copySkillDir(skill: ValidatedSkill, dest: string): Promise<void> {
+  await copyDir(skill.dir, dest);
+  if (skill.originalName !== skill.name) {
+    await rewriteSkillName(path.join(dest, 'SKILL.md'), skill.name);
+  }
+}
+
+async function rewriteSkillName(skillMdPath: string, name: string): Promise<void> {
+  const raw = await fs.readFile(skillMdPath, 'utf8');
+  const parsed = matter(raw);
+  const data = { ...parsed.data, name };
+  await fs.writeFile(skillMdPath, matter.stringify(parsed.content, data), 'utf8');
+}
+
+function relativeSourcePath(skill: ValidatedSkill): string {
+  return path.relative(skill.source.packageRoot, skill.dir).split(path.sep).join('/');
+}
+
+async function hashDirectory(dir: string): Promise<string> {
+  const hash = createHash('sha256');
+  const files = await collectFiles(dir);
+  for (const file of files) {
+    const rel = path.relative(dir, file).split(path.sep).join('/');
+    hash.update(rel);
+    hash.update('\0');
+    hash.update(await fs.readFile(file));
+    hash.update('\0');
+  }
+  return `sha256-${hash.digest('hex')}`;
+}
+
+async function collectFiles(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...(await collectFiles(full)));
+    } else if (entry.isSymbolicLink()) {
+      const real = await fs.realpath(full);
+      const stat = await fs.stat(real);
+      if (stat.isDirectory()) {
+        out.push(...(await collectFiles(real)));
+      } else if (stat.isFile()) {
+        out.push(real);
+      }
+    } else if (entry.isFile()) {
+      out.push(full);
+    }
+  }
+  return out;
 }
 
 /**

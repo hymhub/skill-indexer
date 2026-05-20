@@ -1,4 +1,4 @@
-# Reference
+# API Reference
 
 ## `hello(name: string): void`
 

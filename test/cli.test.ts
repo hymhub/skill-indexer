@@ -79,4 +79,33 @@ describe('cli (integration)', () => {
     expect(await project.exists('.cursor/skills/dry/SKILL.md')).toBe(false);
     expect(await project.exists('.skill-indexer.manifest.json')).toBe(false);
   });
+
+  it('install --experimental includes experimentalSkills', async () => {
+    await project.mkPackage('exp-cli', {
+      agents: { experimentalSkills: [{ name: 'future', path: './skills/future' }] },
+    });
+    await project.writeFile(
+      `node_modules/exp-cli/skills/future/SKILL.md`,
+      ['---', 'name: future', 'description: "future"', '---', '# Future'].join('\n'),
+    );
+
+    await runCli(['install', '-t', 'cursor', '--experimental'], project.root);
+    expect(await project.exists('.cursor/skills/future/SKILL.md')).toBe(true);
+  });
+
+  it('install --on-conflict keep-both installs renamed duplicate skills', async () => {
+    const a = await project.mkPackage('alpha-cli');
+    await project.writeSkill(a, 'shared', { name: 'shared', description: 'a' });
+    const b = await project.mkPackage('beta-cli');
+    await project.writeSkill(b, 'shared', { name: 'shared', description: 'b' });
+
+    await runCli(['install', '-t', 'cursor', '--on-conflict', 'keep-both'], project.root);
+    expect(await project.exists('.cursor/skills/shared/SKILL.md')).toBe(true);
+    expect(await project.exists('.cursor/skills/shared--beta-cli/SKILL.md')).toBe(true);
+    const renamed = await fs.readFile(
+      path.join(project.root, '.cursor/skills/shared--beta-cli/SKILL.md'),
+      'utf8',
+    );
+    expect(renamed).toMatch(/name: shared--beta-cli/);
+  });
 });

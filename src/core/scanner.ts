@@ -1,8 +1,10 @@
 import { promises as fs, type Dirent } from 'node:fs';
 import path from 'node:path';
 import type {
+  DeclarativeSkillSpec,
   PackageJsonLike,
   ScanOptions,
+  SkillChannel,
   SkillCandidate,
   SkillSource,
 } from '../types.js';
@@ -46,14 +48,16 @@ export async function scanAll(input: ScanInput): Promise<SkillCandidate[]> {
       packageRoot: root,
     };
 
-    if (scan.convention) {
+    const packagePlan = scanPlan(scan, pkg);
+
+    if (packagePlan.convention) {
       candidates.push(...(await scanConventionDir(root, source)));
     }
-    if (scan.declarative) {
+    if (packagePlan.declarative) {
       candidates.push(...(await scanDeclarative(root, pkg, source)));
     }
   }
-  return candidates;
+  return dedupeCandidates(candidates);
 }
 
 async function scanLocalProject(cwd: string, scan: ScanOptions): Promise<SkillCandidate[]> {
@@ -65,13 +69,47 @@ async function scanLocalProject(cwd: string, scan: ScanOptions): Promise<SkillCa
     packageVersion: pkg.version,
     packageRoot: cwd,
   };
-  if (scan.convention) {
+  const plan = scanPlan(scan, pkg);
+  if (plan.convention) {
     out.push(...(await scanConventionDir(cwd, source)));
   }
-  if (scan.declarative) {
+  if (plan.declarative) {
     out.push(...(await scanDeclarative(cwd, pkg, source)));
   }
-  return out;
+  return dedupeCandidates(out);
+}
+
+function scanPlan(
+  scan: ScanOptions,
+  pkg: PackageJsonLike,
+): { convention: boolean; declarative: boolean } {
+  const mode = scan.mode ?? deriveScanMode(scan);
+  if (mode === 'convention') return { convention: scan.convention, declarative: false };
+  if (mode === 'declarative') return { convention: false, declarative: scan.declarative };
+  if (mode === 'both') return { convention: scan.convention, declarative: scan.declarative };
+
+  const hasDeclared = hasDeclarativeSkills(pkg);
+  return {
+    convention: scan.convention && !hasDeclared,
+    declarative: scan.declarative && hasDeclared,
+  };
+}
+
+function deriveScanMode(scan: ScanOptions): NonNullable<ScanOptions['mode']> {
+  if (scan.convention && !scan.declarative) return 'convention';
+  if (!scan.convention && scan.declarative) return 'declarative';
+  return 'declared-first';
+}
+
+function hasDeclarativeSkills(pkg: PackageJsonLike): boolean {
+  const agents = pkg.agents;
+  if (!agents) return false;
+  return (
+    (Array.isArray(agents.skills) && agents.skills.length > 0) ||
+    (Array.isArray(agents.experimentalSkills) && agents.experimentalSkills.length > 0) ||
+    typeof agents.skillsDir === 'string' ||
+    typeof agents.experimentalSkillsDir === 'string'
+  );
 }
 
 /**
@@ -130,7 +168,8 @@ async function collectPackageRoots(nodeModules: string): Promise<string[]> {
 
 async function safeReaddir(p: string): Promise<Dirent[]> {
   try {
-    return await fs.readdir(p, { withFileTypes: true });
+    const entries = await fs.readdir(p, { withFileTypes: true });
+    return entries.sort((a, b) => a.name.localeCompare(b.name));
   } catch {
     return [];
   }
@@ -150,10 +189,7 @@ async function addPackageRoot(candidate: string, into: Set<string>): Promise<voi
 /**
  * Convention scan inside a single package root: collect `<root>/skills/<name>/SKILL.md`.
  */
-async function scanConventionDir(
-  root: string,
-  source: SkillSource,
-): Promise<SkillCandidate[]> {
+async function scanConventionDir(root: string, source: SkillSource): Promise<SkillCandidate[]> {
   const skillsDir = path.join(root, 'skills');
   if (!(await isDirectory(skillsDir))) return [];
   const entries = await safeReaddir(skillsDir);
@@ -168,6 +204,8 @@ async function scanConventionDir(
       dir,
       skillMdPath: skillMd,
       dirName: entry.name,
+      channel: 'stable',
+      declaredPath: relativeToRoot(root, dir),
     });
   }
   return out;
@@ -186,8 +224,31 @@ async function scanDeclarative(
   const agents = pkg.agents;
   if (!agents) return out;
 
-  const specs = Array.isArray(agents.skills) ? agents.skills : [];
-  for (const spec of specs) {
+  out.push(...(await scanDeclarativeSpecs(root, source, agents.skills, 'stable')));
+  out.push(
+    ...(await scanDeclarativeSpecs(root, source, agents.experimentalSkills, 'experimental')),
+  );
+
+  if (typeof agents.skillsDir === 'string') {
+    out.push(...(await scanDeclarativeDir(root, source, agents.skillsDir, 'stable')));
+  }
+
+  if (typeof agents.experimentalSkillsDir === 'string') {
+    out.push(
+      ...(await scanDeclarativeDir(root, source, agents.experimentalSkillsDir, 'experimental')),
+    );
+  }
+  return out;
+}
+
+async function scanDeclarativeSpecs(
+  root: string,
+  source: SkillSource,
+  specs: DeclarativeSkillSpec[] | undefined,
+  defaultChannel: SkillChannel,
+): Promise<SkillCandidate[]> {
+  const out: SkillCandidate[] = [];
+  for (const spec of Array.isArray(specs) ? specs : []) {
     if (!spec || typeof spec.path !== 'string') continue;
     const dir = path.resolve(root, spec.path);
     const skillMd = path.join(dir, 'SKILL.md');
@@ -197,26 +258,64 @@ async function scanDeclarative(
       dir,
       skillMdPath: skillMd,
       dirName: spec.name ?? path.basename(dir),
+      channel: isSkillChannel(spec.channel) ? spec.channel : defaultChannel,
+      declaredPath: relativeToRoot(root, dir),
+      declaredTargets: Array.isArray(spec.targets) ? spec.targets : undefined,
     });
   }
+  return out;
+}
 
-  if (typeof agents.skillsDir === 'string') {
-    const baseDir = path.resolve(root, agents.skillsDir);
-    if (await isDirectory(baseDir)) {
-      const entries = await safeReaddir(baseDir);
-      for (const entry of entries) {
-        if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
-        const dir = path.join(baseDir, entry.name);
-        const skillMd = path.join(dir, 'SKILL.md');
-        if (!(await isFile(skillMd))) continue;
-        out.push({
-          source: { ...source, kind: source.kind === 'local' ? 'local' : 'declarative' },
-          dir,
-          skillMdPath: skillMd,
-          dirName: entry.name,
-        });
-      }
-    }
+async function scanDeclarativeDir(
+  root: string,
+  source: SkillSource,
+  dirSpec: string,
+  channel: SkillChannel,
+): Promise<SkillCandidate[]> {
+  const baseDir = path.resolve(root, dirSpec);
+  if (!(await isDirectory(baseDir))) return [];
+
+  const entries = await safeReaddir(baseDir);
+  const out: SkillCandidate[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+    const dir = path.join(baseDir, entry.name);
+    const skillMd = path.join(dir, 'SKILL.md');
+    if (!(await isFile(skillMd))) continue;
+    out.push({
+      source: { ...source, kind: source.kind === 'local' ? 'local' : 'declarative' },
+      dir,
+      skillMdPath: skillMd,
+      dirName: entry.name,
+      channel,
+      declaredPath: relativeToRoot(root, dir),
+    });
   }
   return out;
+}
+
+function relativeToRoot(root: string, dir: string): string {
+  return path.relative(root, dir).split(path.sep).join('/');
+}
+
+function isSkillChannel(value: unknown): value is SkillChannel {
+  return value === 'stable' || value === 'experimental';
+}
+
+function dedupeCandidates(candidates: SkillCandidate[]): SkillCandidate[] {
+  const byDir = new Map<string, SkillCandidate>();
+  for (const candidate of candidates) {
+    const key = candidate.dir;
+    const existing = byDir.get(key);
+    if (!existing || candidateRank(candidate) > candidateRank(existing)) {
+      byDir.set(key, candidate);
+    }
+  }
+  return [...byDir.values()];
+}
+
+function candidateRank(candidate: SkillCandidate): number {
+  const sourceRank = candidate.source.kind === 'declarative' ? 2 : 1;
+  const channelRank = candidate.channel === 'stable' ? 1 : 0;
+  return sourceRank * 10 + channelRank;
 }

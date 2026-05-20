@@ -4,7 +4,7 @@ This guide is for npm package maintainers who want to ship Agent Skills with the
 
 ## TL;DR
 
-Put your skills under `skills/<skill-name>/SKILL.md` inside your package. That's it — no `package.json` change required. Consumers running `skill-indexer install` will pick them up automatically.
+Put your skills under `skills/<skill-name>/` and list them in `package.json#agents.skills`. Consumers running `skill-indexer install` will pick them up across supported tools.
 
 ```
 my-awesome-lib/
@@ -12,17 +12,18 @@ my-awesome-lib/
 ├── src/
 └── skills/
     └── my-awesome-lib/
-        ├── SKILL.md
-        ├── reference.md
-        └── scripts/
-            └── validate.py
+        ├── SKILL.md          # Required: metadata + instructions
+        ├── scripts/          # Optional: executable code
+        ├── references/       # Optional: documentation
+        ├── assets/           # Optional: templates, resources
+        └── ...               # Any additional files or directories
 ```
 
 ## Step 1 — Write `SKILL.md`
 
 `SKILL.md` is a markdown file with YAML frontmatter. `skill-indexer` enforces the [Agent Skills spec](https://agentskills.io) at install time.
 
-```markdown
+````markdown
 ---
 name: my-awesome-lib
 description: Use the my-awesome-lib API to render charts. Trigger when the user mentions charts, plotting, or visualization, or asks to "show data".
@@ -36,7 +37,9 @@ description: Use the my-awesome-lib API to render charts. Trigger when the user 
 import { chart } from 'my-awesome-lib';
 chart(data).render();
 ```
-```
+````
+
+````
 
 ### Required frontmatter
 
@@ -49,13 +52,11 @@ chart(data).render();
 
 - Write `description` in **third person** ("Renders charts…", not "I can render charts…"). The description is injected into the agent's system prompt.
 - Mention concrete trigger terms ("charts", "plot", "visualization") so the agent can decide when to invoke the skill.
-- Keep `SKILL.md` under 500 lines; move detail into `reference.md` / `examples.md` and link to them.
+- Keep `SKILL.md` under 500 lines; move detail into files under `references/` and link to them.
 
-## Step 2 — Choose convention or declarative
+## Step 2 — Declare the package skills
 
-**Convention (recommended).** Put each skill at `skills/<name>/SKILL.md`. Nothing else to do.
-
-**Declarative** (`agents` field, compatible with `npm-agentskills`):
+Use the `agents` field as the cross-tool package contract:
 
 ```json
 {
@@ -66,7 +67,7 @@ chart(data).render();
     ]
   }
 }
-```
+````
 
 You can also point at a whole directory:
 
@@ -78,7 +79,19 @@ You can also point at a whole directory:
 }
 ```
 
-Convention + declarative entries are merged; the same skill (same directory) is deduplicated automatically.
+If you need to publish work-in-progress skills without installing them by default, use `experimentalSkills`:
+
+```json
+{
+  "agents": {
+    "experimentalSkills": [{ "name": "next-api", "path": "./skills/next-api" }]
+  }
+}
+```
+
+Consumers must pass `--experimental` to install experimental skills.
+
+If a package declares `agents.skills`, those entries are authoritative. If it does not, `skill-indexer` falls back to the convention layout `skills/<name>/SKILL.md`. That fallback keeps adoption low-friction, but published packages should prefer the declarative field so unrelated `skills/` folders never become part of the public contract by accident.
 
 ## Step 3 — Make sure your skill ships
 

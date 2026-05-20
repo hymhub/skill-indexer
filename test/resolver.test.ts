@@ -43,10 +43,7 @@ describe('resolveSkills', () => {
     await project.writeSkill(b, 's2', { name: 's2', description: 'd' });
 
     const candidates = await scanAll({ cwd: project.root, scan: DEFAULT_CONFIG.scan });
-    const result = await resolveSkills(
-      candidates,
-      configFor(project, { exclude: ['skip-*'] }),
-    );
+    const result = await resolveSkills(candidates, configFor(project, { exclude: ['skip-*'] }));
     expect(result.skills.map((s) => s.name).sort()).toEqual(['s1']);
     expect(result.filtered.some((f) => f.candidate.source.packageName === 'skip-me')).toBe(true);
   });
@@ -60,10 +57,7 @@ describe('resolveSkills', () => {
     await project.writeSkill(c, 's3', { name: 's3', description: 'd' });
 
     const candidates = await scanAll({ cwd: project.root, scan: DEFAULT_CONFIG.scan });
-    const result = await resolveSkills(
-      candidates,
-      configFor(project, { include: ['@team/*'] }),
-    );
+    const result = await resolveSkills(candidates, configFor(project, { include: ['@team/*'] }));
     expect(result.skills.map((s) => s.name).sort()).toEqual(['s1', 's2']);
   });
 
@@ -90,10 +84,7 @@ describe('resolveSkills', () => {
     await project.writeSkill(b, 'shared', { name: 'shared', description: 'b' });
 
     const candidates = await scanAll({ cwd: project.root, scan: DEFAULT_CONFIG.scan });
-    const result = await resolveSkills(
-      candidates,
-      configFor(project, { onConflict: 'last-wins' }),
-    );
+    const result = await resolveSkills(candidates, configFor(project, { onConflict: 'last-wins' }));
     expect(result.skills).toHaveLength(1);
     expect(result.skills[0]?.source.packageName).toBe('beta-pkg');
   });
@@ -109,16 +100,81 @@ describe('resolveSkills', () => {
     ).rejects.toBeInstanceOf(SkillSyncConflictError);
   });
 
+  it('keep-both renames duplicate skills from different packages', async () => {
+    const a = await project.mkPackage('alpha-pkg');
+    await project.writeSkill(a, 'shared', { name: 'shared', description: 'a' });
+    const b = await project.mkPackage('beta-pkg');
+    await project.writeSkill(b, 'shared', { name: 'shared', description: 'b' });
+
+    const candidates = await scanAll({ cwd: project.root, scan: DEFAULT_CONFIG.scan });
+    const result = await resolveSkills(candidates, configFor(project, { onConflict: 'keep-both' }));
+    expect(result.skills.map((s) => s.name).sort()).toEqual(['shared', 'shared--beta-pkg']);
+    expect(result.skills.find((s) => s.name === 'shared--beta-pkg')?.originalName).toBe('shared');
+    expect(result.conflicts[0]?.renamed?.[0]?.to).toBe('shared--beta-pkg');
+  });
+
+  it('keep-both uses package and folder names when one package exposes multiple duplicate skills', async () => {
+    const pkg = await project.mkPackage('multi-pkg');
+    await project.writeSkill(
+      pkg,
+      'shared',
+      { name: 'shared', description: 'one' },
+      { folder: 'one' },
+    );
+    await project.writeSkill(
+      pkg,
+      'shared',
+      { name: 'shared', description: 'two' },
+      { folder: 'two' },
+    );
+
+    const candidates = await scanAll({ cwd: project.root, scan: DEFAULT_CONFIG.scan });
+    const result = await resolveSkills(candidates, configFor(project, { onConflict: 'keep-both' }));
+    expect(result.skills.map((s) => s.name).sort()).toEqual(['shared', 'shared--multi-pkg-two']);
+  });
+
+  it('skips experimental skills unless explicitly enabled', async () => {
+    await project.mkPackage('exp-pkg', {
+      agents: { experimentalSkills: [{ name: 'future', path: './skills/future' }] },
+    });
+    await project.writeFile(
+      `node_modules/exp-pkg/skills/future/SKILL.md`,
+      ['---', 'name: future', 'description: "future"', '---', '# Future'].join('\n'),
+    );
+
+    const candidates = await scanAll({ cwd: project.root, scan: DEFAULT_CONFIG.scan });
+    const defaultResult = await resolveSkills(candidates, configFor(project));
+    expect(defaultResult.skills).toHaveLength(0);
+    expect(defaultResult.experimental).toHaveLength(1);
+
+    const enabled = await resolveSkills(candidates, configFor(project, { experimental: true }));
+    expect(enabled.skills.map((s) => s.name)).toEqual(['future']);
+  });
+
+  it('filters declared target hints when installing for another target', async () => {
+    await project.mkPackage('targeted-pkg', {
+      agents: {
+        skills: [{ name: 'codex-only', path: './skills/codex-only', targets: ['codex'] }],
+      },
+    });
+    await project.writeFile(
+      `node_modules/targeted-pkg/skills/codex-only/SKILL.md`,
+      ['---', 'name: codex-only', 'description: "codex"', '---', '# Codex'].join('\n'),
+    );
+
+    const candidates = await scanAll({ cwd: project.root, scan: DEFAULT_CONFIG.scan });
+    const result = await resolveSkills(candidates, configFor(project, { targets: ['cursor'] }));
+    expect(result.skills).toHaveLength(0);
+    expect(result.filtered[0]?.reason).toBe('target-mismatch');
+  });
+
   it('local source always wins over dependencies regardless of mode', async () => {
     await project.writeSkill(project.root, 'shared', { name: 'shared', description: 'local' });
     const a = await project.mkPackage('dep-pkg');
     await project.writeSkill(a, 'shared', { name: 'shared', description: 'remote' });
 
     const candidates = await scanAll({ cwd: project.root, scan: DEFAULT_CONFIG.scan });
-    const result = await resolveSkills(
-      candidates,
-      configFor(project, { onConflict: 'last-wins' }),
-    );
+    const result = await resolveSkills(candidates, configFor(project, { onConflict: 'last-wins' }));
     expect(result.skills).toHaveLength(1);
     expect(result.skills[0]?.source.kind).toBe('local');
   });

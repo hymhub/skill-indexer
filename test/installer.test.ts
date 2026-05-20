@@ -47,10 +47,37 @@ describe('installSkills', () => {
     const { config, skills } = await prepareSkills(project);
     await installSkills(skills, { config });
     const manifest = await readManifest(project.root);
+    expect(manifest?.version).toBe(2);
     expect(manifest?.entries).toHaveLength(1);
     expect(manifest?.entries[0]?.name).toBe('beta');
+    expect(manifest?.entries[0]?.channel).toBe('stable');
+    expect(manifest?.entries[0]?.contentHash).toMatch(/^sha256-/);
+    expect(manifest?.entries[0]?.source.path).toBe('skills/beta');
     expect(manifest?.entries[0]?.targets.map((t) => t.target).sort()).toEqual(['codex', 'cursor']);
     expect(manifest?.entries[0]?.source.packageName).toBe('lib-b');
+  });
+
+  it('rewrites copied frontmatter when a conflict was resolved with a new install name', async () => {
+    const pkg = await project.mkPackage('lib-rename');
+    await project.writeSkill(pkg, 'shared', { name: 'shared', description: 'd' });
+    const { config, skills } = await prepareSkills(project, {
+      targets: ['cursor'],
+      onConflict: 'keep-both',
+    });
+    const renamed = {
+      ...skills[0]!,
+      name: 'shared--lib-rename',
+      originalName: 'shared',
+      frontmatter: { ...skills[0]!.frontmatter, name: 'shared--lib-rename' },
+    };
+
+    await installSkills([renamed], { config });
+    const installed = await fs.readFile(
+      path.join(project.root, '.cursor/skills/shared--lib-rename/SKILL.md'),
+      'utf8',
+    );
+    expect(installed).toMatch(/name: shared--lib-rename/);
+    expect(installed).not.toMatch(/name: shared\n/);
   });
 
   it('dry-run leaves no files on disk but reports actions', async () => {

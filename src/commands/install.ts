@@ -53,25 +53,31 @@ export async function installCommand(flags: InstallFlags): Promise<void> {
   }
 
   for (const { candidate, reason } of report.filtered) {
-    logger.debug(
-      `filtered (${reason}): ${candidate.source.packageName} :: ${candidate.dirName}`,
-    );
+    logger.debug(`filtered (${reason}): ${candidate.source.packageName} :: ${candidate.dirName}`);
   }
   for (const { candidate, issues } of report.invalid) {
-    const msg = issues
-      .filter((i) => i.level === 'error')
-      .map((i) => i.message)
-      .join('; ');
+    const msg = issues.map((i) => i.message).join('; ');
     logger.warn(
       `skipped ${kleur.bold(candidate.source.packageName)}::${candidate.dirName} – ${msg}`,
     );
   }
+  for (const { candidate } of report.experimental) {
+    logger.debug(`skipped experimental: ${candidate.source.packageName} :: ${candidate.dirName}`);
+  }
   for (const conflict of report.conflicts) {
-    logger.warn(
-      `conflict on "${conflict.name}": kept ${kleur.bold(
-        conflict.winner.source.packageName,
-      )}, ignored ${conflict.losers.map((s) => s.source.packageName).join(', ')}`,
-    );
+    if (conflict.renamed && conflict.renamed.length > 0) {
+      logger.warn(
+        `conflict on "${conflict.name}": kept all, renamed ${conflict.renamed
+          .map((r) => `${r.from} -> ${r.to}`)
+          .join(', ')}`,
+      );
+    } else {
+      logger.warn(
+        `conflict on "${conflict.name}": kept ${kleur.bold(
+          conflict.winner.source.packageName,
+        )}, ignored ${conflict.losers.map((s) => s.source.packageName).join(', ')}`,
+      );
+    }
   }
 
   if (report.skills.length === 0) {
@@ -89,11 +95,18 @@ export async function installCommand(flags: InstallFlags): Promise<void> {
           dryRun: install.dryRun,
           entries: install.entries.map((e) => ({
             name: e.skill.name,
+            originalName: e.skill.originalName !== e.skill.name ? e.skill.originalName : undefined,
+            channel: e.skill.channel,
             source: e.skill.source.packageName,
             target: e.target,
             dest: e.dest,
             action: e.action,
           })),
+          skipped: {
+            invalid: report.invalid.length,
+            experimental: report.experimental.length,
+            filtered: report.filtered.length,
+          },
           manifest: install.manifest,
         },
         null,
@@ -116,6 +129,11 @@ export async function installCommand(flags: InstallFlags): Promise<void> {
     `${install.dryRun ? 'would install' : 'installed'} ${created} skill target(s), ${skipped} skipped` +
       (install.dryRun ? kleur.yellow(' (dry-run, no files written)') : ''),
   );
+  if (report.invalid.length > 0 || report.experimental.length > 0 || report.filtered.length > 0) {
+    logger.info(
+      `skipped candidates: ${report.invalid.length} invalid, ${report.experimental.length} experimental, ${report.filtered.length} filtered`,
+    );
+  }
   if (config.targets.length === ALL_TARGETS.length) {
     logger.debug('all known targets selected');
   }

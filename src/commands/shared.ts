@@ -1,5 +1,5 @@
 import path from 'node:path';
-import type { OverwriteMode, ConflictMode, UserConfig } from '../types.js';
+import type { OverwriteMode, ConflictMode, ScanMode, UserConfig } from '../types.js';
 
 export interface SharedFlags {
   cwd?: string;
@@ -12,7 +12,9 @@ export interface SharedFlags {
   dryRun?: boolean;
   convention?: boolean;
   declarative?: boolean;
+  scan?: string;
   onConflict?: string;
+  experimental?: boolean;
   json?: boolean;
 }
 
@@ -41,8 +43,14 @@ export function flagsToOverrides(flags: SharedFlags): {
   }
   if (flags.strict !== undefined) overrides.strict = flags.strict;
   if (flags.dryRun !== undefined) overrides.dryRun = flags.dryRun;
-  if (flags.convention !== undefined || flags.declarative !== undefined) {
+  if (flags.experimental !== undefined) overrides.experimental = flags.experimental;
+  if (
+    flags.scan !== undefined ||
+    flags.convention !== undefined ||
+    flags.declarative !== undefined
+  ) {
     overrides.scan = {
+      ...(flags.scan !== undefined ? { mode: flags.scan as ScanMode } : {}),
       ...(flags.convention !== undefined ? { convention: flags.convention } : {}),
       ...(flags.declarative !== undefined ? { declarative: flags.declarative } : {}),
     };

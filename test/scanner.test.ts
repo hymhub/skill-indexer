@@ -28,13 +28,10 @@ describe('scanAll', () => {
     await project.mkPackage('declarative-pkg', {
       agents: { skills: [{ name: 'task', path: './custom/task' }] },
     });
-    await project.writeFile(`node_modules/declarative-pkg/custom/task/SKILL.md`, [
-      '---',
-      'name: task',
-      'description: "Do task"',
-      '---',
-      '# Task',
-    ].join('\n'));
+    await project.writeFile(
+      `node_modules/declarative-pkg/custom/task/SKILL.md`,
+      ['---', 'name: task', 'description: "Do task"', '---', '# Task'].join('\n'),
+    );
     const found = await scanAll({ cwd: project.root, scan: SCAN_BOTH });
     const decl = found.find((c) => c.source.kind === 'declarative');
     expect(decl).toBeTruthy();
@@ -65,13 +62,10 @@ describe('scanAll', () => {
       agents: { skills: [{ name: 'declared', path: './declared' }] },
     });
     await project.writeSkill(pkg, 'conv', { name: 'conv', description: 'd' });
-    await project.writeFile(`node_modules/mix-pkg/declared/SKILL.md`, [
-      '---',
-      'name: declared',
-      'description: "decl"',
-      '---',
-      '# Hi',
-    ].join('\n'));
+    await project.writeFile(
+      `node_modules/mix-pkg/declared/SKILL.md`,
+      ['---', 'name: declared', 'description: "decl"', '---', '# Hi'].join('\n'),
+    );
 
     const onlyConv = await scanAll({
       cwd: project.root,
@@ -88,7 +82,46 @@ describe('scanAll', () => {
     expect(onlyDecl.some((c) => c.dirName === 'declared')).toBe(true);
   });
 
-  it('picks up the consumer project\'s own skills/ folder as local source', async () => {
+  it('uses declarative entries as the package authority in declared-first mode', async () => {
+    const pkg = await project.mkPackage('declared-first-pkg', {
+      agents: { skills: [{ name: 'declared', path: './declared' }] },
+    });
+    await project.writeSkill(pkg, 'convention-only', {
+      name: 'convention-only',
+      description: 'd',
+    });
+    await project.writeFile(
+      `node_modules/declared-first-pkg/declared/SKILL.md`,
+      ['---', 'name: declared', 'description: "decl"', '---', '# Declared'].join('\n'),
+    );
+
+    const found = await scanAll({ cwd: project.root, scan: SCAN_BOTH });
+    expect(found.some((c) => c.dirName === 'declared')).toBe(true);
+    expect(found.some((c) => c.dirName === 'convention-only')).toBe(false);
+
+    const both = await scanAll({
+      cwd: project.root,
+      scan: { mode: 'both', convention: true, declarative: true },
+    });
+    expect(both.some((c) => c.dirName === 'declared')).toBe(true);
+    expect(both.some((c) => c.dirName === 'convention-only')).toBe(true);
+  });
+
+  it('discovers experimental skills through the declarative field', async () => {
+    await project.mkPackage('exp-pkg', {
+      agents: { experimentalSkills: [{ name: 'future', path: './skills/future' }] },
+    });
+    await project.writeFile(
+      `node_modules/exp-pkg/skills/future/SKILL.md`,
+      ['---', 'name: future', 'description: "future"', '---', '# Future'].join('\n'),
+    );
+
+    const found = await scanAll({ cwd: project.root, scan: SCAN_BOTH });
+    const future = found.find((c) => c.dirName === 'future');
+    expect(future?.channel).toBe('experimental');
+  });
+
+  it("picks up the consumer project's own skills/ folder as local source", async () => {
     await project.writeSkill(project.root, 'own', { name: 'own', description: 'mine' });
     const found = await scanAll({ cwd: project.root, scan: SCAN_BOTH });
     const local = found.find((c) => c.source.kind === 'local');

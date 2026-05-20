@@ -21,7 +21,9 @@ export async function listCommand(flags: ListFlags): Promise<void> {
         {
           skills: report.skills.map((s) => ({
             name: s.name,
+            originalName: s.originalName !== s.name ? s.originalName : undefined,
             description: s.description,
+            channel: s.channel,
             dir: s.dir,
             source: s.source,
             warnings: s.warnings,
@@ -35,6 +37,10 @@ export async function listCommand(flags: ListFlags): Promise<void> {
             dir: f.candidate.dir,
             package: f.candidate.source.packageName,
             reason: f.reason,
+          })),
+          experimental: report.experimental.map((e) => ({
+            dir: e.candidate.dir,
+            package: e.candidate.source.packageName,
           })),
         },
         null,
@@ -51,7 +57,7 @@ export async function listCommand(flags: ListFlags): Promise<void> {
     for (const s of report.skills) {
       logger.raw(
         `  ${kleur.green('•')} ${kleur.bold(s.name)}  ${kleur.gray(
-          `(${s.source.kind} :: ${s.source.packageName}${
+          `(${s.channel}, ${s.source.kind} :: ${s.source.packageName}${
             s.source.packageVersion ? `@${s.source.packageVersion}` : ''
           })`,
         )}`,
@@ -79,7 +85,16 @@ export async function listCommand(flags: ListFlags): Promise<void> {
 
   if (report.filtered.length > 0) {
     logger.raw('');
-    logger.raw(kleur.gray(`Filtered ${report.filtered.length} candidate(s) by include/exclude.`));
+    logger.raw(kleur.gray(`Filtered ${report.filtered.length} candidate(s).`));
+  }
+
+  if (report.experimental.length > 0) {
+    logger.raw('');
+    logger.raw(
+      kleur.gray(
+        `Skipped ${report.experimental.length} experimental candidate(s). Pass --experimental to include them.`,
+      ),
+    );
   }
 }
 

@@ -11,15 +11,22 @@ example-skill-library/
 └── skills/
     └── example-skill-library/
         ├── SKILL.md          <- required entry
-        └── reference.md      <- optional, linked from SKILL.md
+        ├── references/       <- optional docs
+        ├── scripts/          <- optional executables
+        └── assets/           <- optional templates/resources
 ```
 
-No `agents.skills` field is needed — the convention scan does the discovery.
+The package declares this directory in `package.json#agents.skills`. Packages without
+that field still work through the `skills/<name>/SKILL.md` fallback, but published
+packages should prefer an explicit declaration.
 
 ## Key bits of `package.json`
 
 ```json
 {
+  "agents": {
+    "skills": [{ "name": "example-skill-library", "path": "./skills/example-skill-library" }]
+  },
   "files": ["dist", "skills"],
   "scripts": {
     "prepublishOnly": "skill-indexer validate --strict"

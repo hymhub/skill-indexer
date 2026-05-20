@@ -9,23 +9,26 @@
 
 > Zero-config CLI that scans your npm dependencies for `SKILL.md` directories, **validates them against the SKILL.md spec**, and installs them into Cursor / Codex / Claude / Copilot / Amp / OpenCode / Goose skill folders.
 
-Library authors ship Agent Skills inside their npm packages. Consumers run **one command** to import every valid skill from their `node_modules` into the IDE-specific folders their AI assistant expects — with strict frontmatter validation so accidental `skills/` folders that aren't real skills never leak through.
+Library authors ship Agent Skills inside their npm packages. Consumers run **one command** to import every valid skill from their `node_modules` into the project-local folders their AI assistants expect — with strict frontmatter validation so accidental `skills/` folders that aren't real skills never leak through.
+
+The design is intentionally cross-tool: npm stays the distribution substrate for version pinning, lockfiles, provenance, and audit, while `agents.skills` is the package-local declaration that tells every tool which directories are real skills. The SKILL.md format itself is introduced at [`agentskills.io`](https://agentskills.io); `skill-indexer` focuses on installing package-shipped skills into each tool's project-local folder.
 
 ---
 
 ## Why another tool?
 
-| | `skill-indexer` | [`npm-agentskills`](https://github.com/onmax/npm-agentskills) | `add-skill` / various |
-|---|---|---|---|
-| Convention scan (no `package.json` change needed) | yes | no | varies |
-| Declarative `agents.skills` field | yes (compat) | yes | varies |
-| Strict `SKILL.md` frontmatter validation | yes | partial | no |
-| `include` / `exclude` glob filters | yes | no | no |
-| Same-name conflict policy (`error` / `first-wins` / `last-wins`) | yes | no | no |
-| Manifest-driven safe `clean` | yes | no | no |
-| Multi-target install in one command | yes | yes | varies |
+|                                                                                | `skill-indexer`   | [`npm-agentskills`](https://github.com/onmax/npm-agentskills) | `add-skill` / various |
+| ------------------------------------------------------------------------------ | ----------------- | ------------------------------------------------------------- | --------------------- |
+| Declarative `agents.skills` field                                              | yes (recommended) | yes                                                           | varies                |
+| Convention fallback (no `package.json` change needed)                          | yes               | no                                                            | varies                |
+| Strict `SKILL.md` frontmatter validation                                       | yes               | partial                                                       | no                    |
+| Experimental skill channel                                                     | yes               | no                                                            | no                    |
+| `include` / `exclude` glob filters                                             | yes               | no                                                            | no                    |
+| Same-name conflict policy (`error` / `first-wins` / `last-wins` / `keep-both`) | yes               | no                                                            | no                    |
+| Manifest-driven safe `clean` + source audit                                    | yes               | no                                                            | no                    |
+| Multi-target install in one command                                            | yes               | yes                                                           | varies                |
 
-If you've ever had a dependency that *coincidentally* contains a `skills/` directory or a `SKILL.md` file that wasn't meant for AI agents, `skill-indexer` will silently skip it instead of polluting your `.cursor/skills/`.
+If you've ever had a dependency that _coincidentally_ contains a `skills/` directory or a `SKILL.md` file that wasn't meant for AI agents, `skill-indexer` will silently skip it instead of polluting your `.cursor/skills/`.
 
 ---
 
@@ -60,43 +63,47 @@ Add it to your `postinstall` script to keep skills always in sync:
 
 ### As a library author
 
-Publish a `SKILL.md` inside your package. The simplest "convention" layout requires **no `package.json` change**:
+Publish one or more `SKILL.md` directories inside your package. The recommended form is declarative: list each skill in `package.json#agents.skills` so consumers do not have to guess which folders are meant for agents.
 
 ```
 my-awesome-lib/
 ├── package.json
 ├── src/
 └── skills/
-    └── my-awesome-lib/
-        ├── SKILL.md
-        └── reference.md
+    └── my-skill/
+        ├── SKILL.md          # Required: metadata + instructions
+        ├── scripts/          # Optional: executable code
+        ├── references/       # Optional: documentation
+        ├── assets/           # Optional: templates, resources
+        └── ...               # Any additional files or directories
 ```
 
 ```markdown
 ---
-name: my-awesome-lib
+name: my-skill
 description: Use the my-awesome-lib API to do X. Trigger when the user mentions Y or asks how to Z.
 ---
 
-# my-awesome-lib
+# my-skill
 
 Step 1: ...
 ```
 
-Prefer the declarative form (and want compatibility with `npm-agentskills`)? Add an `agents` field:
+Add an `agents` field:
 
 ```json
 {
   "name": "my-awesome-lib",
   "agents": {
     "skills": [
-      { "name": "my-awesome-lib", "path": "./skills/my-awesome-lib" }
+      { "name": "my-skill", "path": "./skills/my-skill" },
+      { "name": "my-skill-deep-dive", "path": "./skills/my-skill-deep-dive" }
     ]
   }
 }
 ```
 
-Both forms are detected automatically.
+If a package declares `agents.skills`, those entries are authoritative. If it does not, `skill-indexer` falls back to the convention layout `skills/<name>/SKILL.md`.
 
 ---
 
@@ -104,44 +111,46 @@ Both forms are detected automatically.
 
 All paths are **project-local** — `skill-indexer` never writes to global config.
 
-| Flag | Tool | Directory |
-|------|------|-----------|
-| `cursor` | [Cursor](https://cursor.com/docs/skills) | `.cursor/skills/` |
-| `codex` | [OpenAI Codex](https://developers.openai.com/codex/skills) | `.codex/skills/` |
-| `claude` | [Claude Code](https://code.claude.com/docs/en/skills) | `.claude/skills/` |
-| `copilot` | [GitHub Copilot](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills) | `.github/skills/` |
-| `amp` | [Amp](https://ampcode.com/news/agent-skills) | `.agents/skills/` |
-| `opencode` | [OpenCode](https://opencode.ai/docs/skills) | `.opencode/skill/` |
-| `goose` | [Goose](https://block.github.io/goose/docs/guides/context-engineering/using-skills) | `.goose/skills/` |
-| `all` | every supported target above | — |
+| Flag       | Tool                                                                                    | Directory          |
+| ---------- | --------------------------------------------------------------------------------------- | ------------------ |
+| `cursor`   | [Cursor](https://cursor.com/docs/skills)                                                | `.cursor/skills/`  |
+| `codex`    | [OpenAI Codex](https://developers.openai.com/codex/skills)                              | `.codex/skills/`   |
+| `claude`   | [Claude Code](https://code.claude.com/docs/en/skills)                                   | `.claude/skills/`  |
+| `copilot`  | [GitHub Copilot](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills) | `.github/skills/`  |
+| `amp`      | [Amp](https://ampcode.com/news/agent-skills)                                            | `.agents/skills/`  |
+| `opencode` | [OpenCode](https://opencode.ai/docs/skills)                                             | `.opencode/skill/` |
+| `goose`    | [Goose](https://block.github.io/goose/docs/guides/context-engineering/using-skills)     | `.goose/skills/`   |
+| `all`      | every supported target above                                                            | —                  |
 
 ---
 
 ## CLI reference
 
 ```bash
-skill-indexer install [options]
-skill-indexer list    [options]
-skill-indexer validate [path] [options]
-skill-indexer clean   [options]
+skill-indexer install [options]          # Install valid dependency skills into target folders
+skill-indexer list    [options]          # Show discovered, skipped, and filtered skills
+skill-indexer validate [path] [options]  # Validate one skill directory, or local ./skills
+skill-indexer clean   [options]          # Remove skills recorded in the manifest
 ```
 
 ### Common options
 
-| Flag | Description |
-|------|-------------|
-| `-t, --target <list>` | Comma-separated targets (e.g. `cursor,codex,claude`, or `all`). |
-| `--cwd <dir>` | Project root (defaults to `process.cwd()`). |
-| `--config <path>` | Explicit path to a config file. |
-| `--include <patterns>` | Comma-separated globs (matched against npm package name). |
-| `--exclude <patterns>` | Comma-separated globs (matched against npm package name). |
-| `--overwrite <mode>` | `skip` (default) / `overwrite` / `merge`. |
-| `--on-conflict <mode>` | `error` / `first-wins` (default) / `last-wins`. |
-| `--strict` | Promote validation warnings to errors. |
-| `--dry-run` | Print actions without writing files. |
-| `--no-convention` | Disable convention scan. |
-| `--no-declarative` | Disable declarative scan. |
-| `--json` | Emit machine-readable JSON to stdout (progress goes to stderr). |
+| Flag                   | Default             | Values                                                                    | Purpose                                                                           |
+| ---------------------- | ------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `-t, --target <list>`  | config value / none | `cursor`, `codex`, `claude`, `copilot`, `amp`, `opencode`, `goose`, `all` | Choose target tool folders. Use commas for multiple targets.                      |
+| `--cwd <dir>`          | `process.cwd()`     | filesystem path                                                           | Set the project root.                                                             |
+| `--config <path>`      | auto-discover       | JSON config path                                                          | Read one config file.                                                             |
+| `--include <patterns>` | none                | comma-separated globs                                                     | Only allow matching npm packages.                                                 |
+| `--exclude <patterns>` | none                | comma-separated globs                                                     | Skip matching npm packages.                                                       |
+| `--overwrite <mode>`   | `skip`              | `skip`, `overwrite`, `merge`                                              | If target exists: leave it, replace it, or copy into it.                          |
+| `--on-conflict <mode>` | `first-wins`        | `first-wins`, `last-wins`, `error`, `keep-both`                           | If skill names collide: keep first, keep last, fail, or rename and keep all.      |
+| `--scan <mode>`        | `declared-first`    | `declared-first`, `both`, `convention`, `declarative`                     | Discover from declarations first, both sources, only `skills/`, or only `agents`. |
+| `--strict`             | `false`             | boolean flag                                                              | Treat validation warnings as errors.                                              |
+| `--dry-run`            | `false`             | boolean flag                                                              | Show actions without writing files.                                               |
+| `--experimental`       | `false`             | boolean flag                                                              | Include experimental skills.                                                      |
+| `--no-convention`      | `false`             | boolean flag                                                              | Disable `skills/<name>/SKILL.md` fallback.                                        |
+| `--no-declarative`     | `false`             | boolean flag                                                              | Disable `package.json#agents` discovery.                                          |
+| `--json`               | `false`             | boolean flag                                                              | Print JSON to stdout.                                                             |
 
 ### Examples
 
@@ -156,6 +165,12 @@ skill-indexer install -t cursor --strict --dry-run
 skill-indexer install -t cursor \
   --include "@my-org/*" \
   --exclude "legacy-*"
+
+# Keep duplicate skill names by installing later conflicts with resolved names
+skill-indexer install -t all --on-conflict keep-both
+
+# Include experimental skills explicitly
+skill-indexer install -t codex --experimental
 
 # List discovered skills as JSON (great for tooling)
 skill-indexer list --json
@@ -179,10 +194,11 @@ Either `package.json#skillIndexer` or a `skill-indexer.config.json` file:
     "targets": ["cursor", "codex", "claude"],
     "include": ["@my-org/*", "awesome-skills"],
     "exclude": ["legacy-pkg", "**/internal-only/*"],
-    "scan": { "convention": true, "declarative": true },
+    "scan": { "mode": "declared-first" },
     "overwrite": "skip",
     "strict": false,
-    "onConflict": "first-wins"
+    "onConflict": "first-wins",
+    "experimental": false
   }
 }
 ```
@@ -212,10 +228,13 @@ Anything that fails the required checks is silently skipped during `install` and
 
 When two dependencies expose a skill with the same `name`:
 
-- **`error`** (default for libraries who want determinism): abort with a non-zero exit and list both sources.
 - **`first-wins`** (default): keep whichever was discovered first; warn about the loser.
 - **`last-wins`**: keep the latest match; useful when you intentionally shadow upstream skills.
+- **`error`**: abort with a non-zero exit and list both sources.
+- **`keep-both`**: install every conflicting skill by assigning deterministic names to later conflicts.
 - A skill defined locally in the consumer project (`./skills/<name>`) **always** wins, regardless of mode.
+
+In `keep-both`, the first skill keeps its frontmatter `name`. Later conflicts are renamed with a package-derived suffix, for example `shared` and `shared--beta-pkg`. If one package exposes multiple skills with the same `name`, the folder name is included, for example `shared--multi-pkg-two`. The copied `SKILL.md` frontmatter is rewritten in the destination only; the package in `node_modules` is never modified.
 
 ---
 
@@ -225,15 +244,22 @@ After every successful `install`, `skill-indexer` writes `./.skill-indexer.manif
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "updatedAt": "2026-05-19T07:00:00.000Z",
   "entries": [
     {
-      "name": "my-awesome-lib",
-      "source": { "packageName": "my-awesome-lib", "packageVersion": "1.2.3", "kind": "convention" },
+      "name": "my-skill",
+      "channel": "stable",
+      "contentHash": "sha256-...",
+      "source": {
+        "packageName": "my-awesome-lib",
+        "packageVersion": "1.2.3",
+        "kind": "declarative",
+        "path": "skills/my-skill"
+      },
       "targets": [
-        { "target": "cursor", "dest": "/abs/path/to/.cursor/skills/my-awesome-lib" },
-        { "target": "codex", "dest": "/abs/path/to/.codex/skills/my-awesome-lib" }
+        { "target": "cursor", "dest": "/abs/path/to/.cursor/skills/my-skill" },
+        { "target": "codex", "dest": "/abs/path/to/.codex/skills/my-skill" }
       ],
       "installedAt": "2026-05-19T07:00:00.000Z"
     }
@@ -264,22 +290,23 @@ const result = await installSkills(report.skills, { config });
 console.log(result.entries);
 ```
 
-Every type used above is exported from the package root (`Skill`, `ValidatedSkill`, `Target`, `SkillSyncConfig`, `Manifest`, …).
+Every type used above is exported from the package root (`ValidatedSkill`, `Target`, `SkillSyncConfig`, `Manifest`, …).
 
 ---
 
 ## How discovery works
 
 ```
-node_modules/<pkg>/skills/<name>/SKILL.md            <- convention scan
-node_modules/@scope/<pkg>/skills/<name>/SKILL.md     <- convention scan (scoped)
-node_modules/.pnpm/<id>/node_modules/<pkg>/skills/.. <- convention scan (pnpm flat store)
-node_modules/<pkg>/package.json#agents.skills        <- declarative scan
-node_modules/<pkg>/package.json#agents.skillsDir     <- declarative scan (whole folder)
+node_modules/<pkg>/package.json#agents.skills              <- declarative scan
+node_modules/<pkg>/package.json#agents.experimentalSkills  <- opt-in experimental scan
+node_modules/<pkg>/package.json#agents.skillsDir           <- declarative scan (whole folder)
+node_modules/<pkg>/skills/<name>/SKILL.md                  <- convention fallback
+node_modules/@scope/<pkg>/skills/<name>/SKILL.md           <- convention fallback (scoped)
+node_modules/.pnpm/<id>/node_modules/<pkg>/skills/..       <- convention fallback (pnpm flat store)
 <cwd>/skills/<name>/SKILL.md                         <- local source (always wins)
 ```
 
-Symlinks are dereferenced and deduplicated by realpath, so a pnpm hardlink + top-level symlink are never scanned twice.
+Default scan mode is `declared-first`: a package with `agents.skills`, `agents.experimentalSkills`, or `agents.skillsDir` is treated as declarative and convention scanning is skipped for that package. Packages without declarations fall back to `skills/<name>/SKILL.md`. Use `--scan both` if you explicitly want both sources.
 
 ---
 
